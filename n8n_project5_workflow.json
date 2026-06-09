@@ -1,0 +1,111 @@
+{
+  "name": "Customer Review Insights Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "documentId": { "value": "YOUR_SHEET_ID", "__rl": true, "mode": "id" },
+        "sheetName": { "value": "Sheet1", "__rl": true, "mode": "name" },
+        "event": "rowAdded"
+      },
+      "id": "node_trigger",
+      "name": "Google Sheets Trigger",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Summarize the customer's product review below in 1–2 sentences.\nReturn only the summary text.\n\nReview: {{ $json.Feedback }}"
+      },
+      "id": "node_summarize",
+      "name": "Summarization",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Identify the sentiment of the product review as Positive, Neutral, or Negative.\nReturn in this format only:\nSentiment: <Positive/Negative/Neutral> | Score: <0–1>\n\nReview: {{ $('Google Sheets Trigger').item.json.Feedback }}"
+      },
+      "id": "node_sentiment",
+      "name": "Sentiment Analysis",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Classify the tone of the following review summary into: Informative, Persuasive, or Friendly.\nReturn in this format only:\nTone: <Informative/Persuasive/Friendly> | Score: <0–1>\n\nReview Summary: {{ $('Summarization').item.json.text }}"
+      },
+      "id": "node_tone",
+      "name": "Tone Classification",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "value": "YOUR_SHEET_ID", "__rl": true, "mode": "id" },
+        "sheetName": { "value": "Sheet2", "__rl": true, "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Product Name": "={{ $('Google Sheets Trigger').item.json['Product Name'] }}",
+            "Product Review": "={{ $('Google Sheets Trigger').item.json.Feedback }}",
+            "Summary": "={{ $('Summarization').item.json.text }}",
+            "Sentiment & Score": "={{ $('Sentiment Analysis').item.json.text }}",
+            "Tone & Score": "={{ $('Tone Classification').item.json.text }}"
+          }
+        }
+      },
+      "id": "node_sheets_write",
+      "name": "Write to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [{
+            "value1": "={{ $('Sentiment Analysis').item.json.text }}",
+            "operation": "contains",
+            "value2": "Negative"
+          }]
+        }
+      },
+      "id": "node_if",
+      "name": "Is Review Negative?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "teamlead@example.com",
+        "subject": "=Negative Customer Review Received – {{ $('Google Sheets Trigger').item.json['Product Name'] }}",
+        "message": "=Dear Team Lead,\n\nWe have received a negative customer review for: {{ $('Google Sheets Trigger').item.json['Product Name'] }}.\n\nSummary: {{ $('Summarization').item.json.text }}\n\nPlease review and take necessary action.\n\nBest Regards,\nWorkflow Automation Team"
+      },
+      "id": "node_gmail",
+      "name": "Send Alert Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1560, 200]
+    }
+  ],
+  "connections": {
+    "Google Sheets Trigger": { "main": [[{ "node": "Summarization", "type": "main", "index": 0 }]] },
+    "Summarization": { "main": [[{ "node": "Sentiment Analysis", "type": "main", "index": 0 }]] },
+    "Sentiment Analysis": { "main": [[{ "node": "Tone Classification", "type": "main", "index": 0 }]] },
+    "Tone Classification": { "main": [[{ "node": "Write to Sheets", "type": "main", "index": 0 }]] },
+    "Write to Sheets": { "main": [[{ "node": "Is Review Negative?", "type": "main", "index": 0 }]] },
+    "Is Review Negative?": { "main": [[{ "node": "Send Alert Email", "type": "main", "index": 0 }], []] }
+  },
+  "active": false,
+  "settings": {}
+}
